@@ -120,6 +120,7 @@ class Company(UserMixin, db.Model):
     prob_default = db.Column(db.Float)
     username = db.Column(db.String(15))    
     data_timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    sector=db.Column(db.String(20))
 
 ##############################################################################
 #     SQLAlchemy ORM classes - END                                           #
@@ -162,6 +163,7 @@ class CompanyForm(FlaskForm):
     p10000 = MyFloatField('Total Assets / Total activos', validators=[InputRequired()])
     p20000 = MyFloatField('Own Capital / Patrimonio neto', validators=[InputRequired()])
     p31200_plus_32300 = MyFloatField('Total Debt / Deuda total', validators=[InputRequired()])
+    sector = StringField('CNAE Code / Código CNAE', validators=[InputRequired(), Length(min=2, max=20)],default='')
 
 
 ##############################################################################
@@ -208,11 +210,16 @@ def signup():
     form = RegisterForm()
     message=''
     if form.validate_on_submit():
-        hashed_password = generate_password_hash(form.password.data, method='sha256')
-        new_user = User(username=form.username.data, email=form.email.data, password=hashed_password)
-        db.session.add(new_user)
-        db.session.commit()
-        message='New user has been created!'
+        try:
+            hashed_password = generate_password_hash(form.password.data, method='sha256')
+            new_user = User(username=form.username.data, email=form.email.data, password=hashed_password)
+            db.session.add(new_user)
+            db.session.commit()
+        except:
+            db.session.rollback()
+            message='User or email already used'
+            return render_template('signup.html', form=form, message=message)
+        message='The user {} has been created successfully!'.format(new_user.username)
         form = LoginForm()
         return render_template('login.html', form=form, message=message)
     return render_template('signup.html', form=form, message=message)
@@ -336,7 +343,8 @@ def company():
             X = pd.DataFrame({'ebitda_income': [ebitda_income], \
                               'debt_ebitda': [debt_ebitda], \
                               'rraa_rrpp' : [rraa_rrpp], \
-                              'log_operating_income' : [log_operating_income]
+                              'log_operating_income' : [log_operating_income] \
+                              'sector_code' : [form.sector.data]
                               })
             prob_default = Rating_RandomForestClassifier_model.predict_proba(X)[:,1]
         
@@ -348,6 +356,7 @@ def company():
                 update_or_new = 0 # 0 for new                
 
             if update_or_new == 1: # UPDATING DATA FROM AN EXISTING COMPANY
+                company.sector = form.sector.data
                 company.name = form.name.data
                 company.p10000 = form.p10000.data
                 company.p20000 = form.p20000.data
@@ -376,7 +385,8 @@ def company():
                         rraa_rrpp = rraa_rrpp, \
                         prob_default = prob_default, \
                         log_operating_income = log_operating_income, \
-                        username = current_user.username
+                        username = current_user.username \
+                        sector= form.sector.data
                         )
                 db.session.add(new_company)
                 db.session.commit()        
